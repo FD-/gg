@@ -77,12 +77,15 @@ type Context struct {
 	fontHeight    float64
 	matrix        Matrix
 	stack         []*Context
+	dirty         bool
 }
 
 // NewContext creates a new image.RGBA with the specified width and height
 // and prepares a context for rendering onto that image.
 func NewContext(width, height int) *Context {
-	return NewContextForRGBA(image.NewRGBA(image.Rect(0, 0, width, height)))
+	dc := NewContextForRGBA(image.NewRGBA(image.Rect(0, 0, width, height)))
+	dc.dirty = false
+	return dc
 }
 
 // NewContextForImage copies the specified image into a new image.RGBA
@@ -109,6 +112,7 @@ func NewContextForRGBA(im *image.RGBA) *Context {
 		fontFace:      basicfont.Face7x13,
 		fontHeight:    13,
 		matrix:        Identity(),
+		dirty:         true,
 	}
 }
 
@@ -454,6 +458,7 @@ func (dc *Context) StrokePreserve() {
 		painter = newPatternPainter(dc.im, dc.mask, dc.strokePattern)
 	}
 	dc.stroke(painter)
+	dc.dirty = true
 }
 
 // Stroke strokes the current path with the current color, line width,
@@ -481,6 +486,7 @@ func (dc *Context) FillPreserve() {
 		painter = newPatternPainter(dc.im, dc.mask, dc.fillPattern)
 	}
 	dc.fill(painter)
+	dc.dirty = true
 }
 
 // Fill fills the current path with the current color. Open subpaths
@@ -557,11 +563,13 @@ func (dc *Context) ResetClip() {
 func (dc *Context) Clear() {
 	src := image.NewUniform(dc.color)
 	draw.Draw(dc.im, dc.im.Bounds(), src, image.ZP, draw.Src)
+	dc.dirty = true
 }
 
 // SetPixel sets the color of the specified pixel using the current color.
 func (dc *Context) SetPixel(x, y int) {
 	dc.im.Set(x, y, dc.color)
+	dc.dirty = true
 }
 
 // DrawPoint is like DrawCircle but ensures that a circle of the specified
@@ -677,14 +685,21 @@ func (dc *Context) DrawImageAnchored(im image.Image, x, y int, ax, ay float64) {
 	fx, fy := float64(x), float64(y)
 	m := dc.matrix.Translate(fx, fy)
 	s2d := f64.Aff3{m.XX, m.XY, m.X0, m.YX, m.YY, m.Y0}
+
+	op := draw.Over
+	if !dc.dirty {
+		op = draw.Src
+	}
+
 	if dc.mask == nil {
-		transformer.Transform(dc.im, s2d, im, im.Bounds(), draw.Over, nil)
+		transformer.Transform(dc.im, s2d, im, im.Bounds(), op, nil)
 	} else {
-		transformer.Transform(dc.im, s2d, im, im.Bounds(), draw.Over, &draw.Options{
+		transformer.Transform(dc.im, s2d, im, im.Bounds(), op, &draw.Options{
 			DstMask:  dc.mask,
 			DstMaskP: image.ZP,
 		})
 	}
+	dc.dirty = true
 }
 
 // Text Functions
@@ -760,6 +775,7 @@ func (dc *Context) DrawStringAnchored(s string, x, y, ax, ay float64) {
 		dc.drawString(im, s, x, y)
 		draw.DrawMask(dc.im, dc.im.Bounds(), im, image.ZP, dc.mask, image.ZP, draw.Over)
 	}
+	dc.dirty = true
 }
 
 // DrawStringWrapped word-wraps the specified string to the given max width
@@ -789,6 +805,7 @@ func (dc *Context) DrawStringWrapped(s string, x, y, ax, ay, width, lineSpacing 
 		dc.DrawStringAnchored(line, x, y, ax, ay)
 		y += dc.fontHeight * lineSpacing
 	}
+	dc.dirty = true
 }
 
 func (dc *Context) MeasureMultilineString(s string, lineSpacing float64) (width, height float64) {
