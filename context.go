@@ -930,7 +930,6 @@ func (dc *Context) Pop() {
 	s := dc.stack
 	x, s := s[len(s)-1], s[:len(s)-1]
 	*dc = *x
-	dc.mask = before.mask
 	dc.strokePath = before.strokePath
 	dc.fillPath = before.fillPath
 	dc.start = before.start
