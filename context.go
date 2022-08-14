@@ -684,6 +684,20 @@ func (dc *Context) DrawImageAnchored(im image.Image, x, y int, ax, ay float64) {
 	transformer := draw.BiLinear
 	fx, fy := float64(x), float64(y)
 	m := dc.matrix.Translate(fx, fy)
+	
+	if (dc.matrix.XY == 0 && dc.matrix.YX == 0) {
+		// We only have a translation and/or scaling, so we can operate on a subimage
+		invm := Matrix{1/m.XX, 0, 0, 1/m.YY, -m.X0, -m.Y0}
+		minx, miny := invm.TransformPoint(fx, fy)
+		maxx, maxy := invm.TransformPoint(float64(x+dc.width), float64(y+dc.height))
+		subrect := image.Rect(int(minx), int(miny), int(maxx), int(maxy))
+		im = im.(interface {
+			SubImage(r image.Rectangle) image.Image
+		}).SubImage(subrect)
+		// The subimage shares the underlying pixel buffer and is aware of its bounds 
+		// offset, so we don't even have to change matrix m.
+	}
+	
 	s2d := f64.Aff3{m.XX, m.XY, m.X0, m.YX, m.YY, m.Y0}
 
 	op := draw.Over
